@@ -1,0 +1,27 @@
+{
+  "name": "email-claim-detector",
+  "version": "1.0.0",
+  "description": "Exchange Online email claim detection using Azure OpenAI",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["exchange", "email", "claim-detection", "azure-openai"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@azure/msal-node": "^2.6.6",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
+    "openai": "^4.26.1",
+    "sqlite3": "^5.1.6",
+    "dotenv": "^16.3.1",
+    "isomorphic-fetch": "^3.0.0",
+    "open": "^8.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.17"
+  }
+}
