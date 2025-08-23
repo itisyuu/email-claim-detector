@@ -1,4 +1,4 @@
-export class DisplayUtils {
+export class ClaimFormatter {
   static formatClaimsTable(claims) {
     if (claims.length === 0) {
       return 'クレームが見つかりませんでした。';

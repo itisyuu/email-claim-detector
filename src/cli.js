@@ -1,6 +1,6 @@
 import readline from 'readline';
 import { ClaimDetector } from './services/claimDetector.js';
-import { DisplayUtils } from './utils/display.js';
+import { ClaimFormatter } from './presentation/formatters/claimFormatter.js';
 import { validateConfig } from './config/config.js';
 
 export class CLI {
@@ -20,7 +20,7 @@ export class CLI {
       console.log('⚙️ サービスを初期化中...');
       await this.detector.initialize();
       
-      console.log(DisplayUtils.showWelcome());
+      console.log(ClaimFormatter.showWelcome());
       this.showPrompt();
     } catch (error) {
       console.error('❌ 初期化エラー:', error.message);
@@ -81,7 +81,7 @@ export class CLI {
           break;
 
         case 'help':
-          console.log(DisplayUtils.showMenu());
+          console.log(ClaimFormatter.showMenu());
           break;
 
         case 'exit':
@@ -145,10 +145,10 @@ export class CLI {
       }
 
       console.log(`📋 ${claims.length}件のクレームが見つかりました`);
-      console.log(DisplayUtils.formatClaimsTable(claims));
+      console.log(ClaimFormatter.formatClaimsTable(claims));
 
       if (claims.length === 1) {
-        console.log(DisplayUtils.formatClaimDetails(claims[0]));
+        console.log(ClaimFormatter.formatClaimDetails(claims[0]));
       } else if (claims.length <= 5) {
         console.log('\n詳細表示が必要な場合は、フィルターで絞り込んでください');
       }
@@ -162,7 +162,7 @@ export class CLI {
     console.log('📊 統計情報を取得中...');
     try {
       const stats = await this.detector.getClaimStats();
-      console.log(DisplayUtils.formatStats(stats));
+      console.log(ClaimFormatter.formatStats(stats));
     } catch (error) {
       console.error('❌ 統計取得中にエラーが発生しました:', error.message);
     }
@@ -200,7 +200,7 @@ export class CLI {
     console.log('📋 処理ログを取得中...');
     try {
       const logs = await this.detector.getRecentProcessingLogs();
-      console.log(DisplayUtils.formatProcessingLog(logs));
+      console.log(ClaimFormatter.formatProcessingLog(logs));
     } catch (error) {
       console.error('❌ ログ取得中にエラーが発生しました:', error.message);
     }
@@ -220,7 +220,7 @@ export class CLI {
       }
 
       console.log(`📋 ${emails.length}件の処理済みメールが見つかりました`);
-      console.log(DisplayUtils.formatEmailHistoryTable(emails));
+      console.log(ClaimFormatter.formatEmailHistoryTable(emails));
 
     } catch (error) {
       console.error('❌ メール履歴取得中にエラーが発生しました:', error.message);
