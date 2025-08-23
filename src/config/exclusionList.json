@@ -1,0 +1,35 @@
+{
+  "excludeFromClaimDetection": {
+    "emails": [
+      "noreply@example.com",
+      "marketing@example.com",
+      "newsletter@example.com",
+      "notifications@example.com",
+      "automated@example.com",
+      "system@example.com",
+      "postmaster@example.com"
+    ],
+    "domains": [
+      "noreply.com",
+      "marketing.com", 
+      "newsletter.com",
+      "notifications.com",
+      "automated.com",
+      "system.com",
+      "mailchimp.com",
+      "constantcontact.com",
+      "sendgrid.net",
+      "amazonses.com",
+      "mailgun.org"
+    ],
+    "subjectPatterns": [
+      "^(Re:|Fwd:)?\\s*Newsletter",
+      "^(Re:|Fwd:)?\\s*Marketing",
+      "^(Re:|Fwd:)?\\s*Bulk",
+      "^(Re:|Fwd:)?\\s*Promotion",
+      "^(Re:|Fwd:)?\\s*Unsubscribe",
+      "^(Re:|Fwd:)?\\s*Auto:",
+      "^(Re:|Fwd:)?\\s*Automated"
+    ]
+  }
+}

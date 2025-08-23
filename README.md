@@ -6,6 +6,7 @@ Exchange Online から Delegate 権限でメールを取得し、Azure OpenAI �
 
 - 🔐 Azure AD を使用した Exchange Online 認証
 - 📧 Delegate 権限でのメール取得
+- 📅 期間を指定したメール取得（日時範囲、過去n日/時間）
 - 🤖 Azure OpenAI によるクレーム自動検知
 - 📊 SQLite での処理結果保存・管理
 - 📈 クレーム統計とレポート生成
@@ -92,6 +93,49 @@ npm start
 | `help`    | ヘルプを表示                    | `help`                   |
 | `exit`    | アプリケーションを終了          | `exit`                   |
 
+### 期間指定でのメール取得
+
+システムでは以下の方法で期間を指定してメールを取得できます:
+
+#### プログラム内での使用例
+
+```javascript
+import { ExchangeService } from './src/services/exchangeService.js';
+
+const exchangeService = new ExchangeService();
+await exchangeService.initialize();
+
+// 過去7日間のメール取得
+const emails = await exchangeService.getEmailsByDateRange({
+  daysAgo: 7
+});
+
+// 過去24時間のメール取得
+const recentEmails = await exchangeService.getEmailsByDateRange({
+  hoursAgo: 24
+});
+
+// 特定期間のメール取得（開始日時と終了日時を指定）
+const specificEmails = await exchangeService.getEmailsByDateRange({
+  startDate: new Date('2025-08-20'),
+  endDate: new Date('2025-08-22')
+});
+
+// 開始日時のみ指定（その日時以降のメール）
+const fromDateEmails = await exchangeService.getEmailsByDateRange({
+  startDate: new Date('2025-08-20')
+});
+```
+
+#### 期間指定オプション
+
+| オプション    | 説明                          | 例                         |
+| ------------- | ----------------------------- | -------------------------- |
+| `startDate`   | 取得開始日時を指定            | `new Date('2025-08-20')`   |
+| `endDate`     | 取得終了日時を指定            | `new Date('2025-08-22')`   |
+| `daysAgo`     | 過去n日前から現在まで         | `daysAgo: 7` (過去7日間)   |
+| `hoursAgo`    | 過去n時間前から現在まで       | `hoursAgo: 24` (過去24時間)|
+
 ### フィルターオプション
 
 ```bash
@@ -121,7 +165,7 @@ email-claim-detector/
 │   ├── models/
 │   │   └── database.js        # データベース操作
 │   ├── services/
-│   │   ├── exchangeService.js # Exchange Online連携
+│   │   ├── exchangeService.js # Exchange Online連携（期間指定機能含む）
 │   │   ├── openaiService.js   # Azure OpenAI連携
 │   │   └── claimDetector.js   # メインロジック
 │   ├── utils/
@@ -161,6 +205,59 @@ email-claim-detector/
 - `high`: 高 (重要な問題、緊急対応が必要)
 - `medium`: 中 (一般的な問題)
 - `low`: 低 (軽微な問題)
+
+## クレーム判定除外機能
+
+バルクメールや自動送信メールなど、クレーム判定が不要なメールを除外する機能を提供しています。
+
+### 除外設定ファイル
+
+`src/config/exclusionList.json` でクレーム判定から除外するメールを設定できます:
+
+```json
+{
+  "excludeFromClaimDetection": {
+    "emails": [
+      "noreply@example.com",
+      "marketing@example.com",
+      "newsletter@example.com"
+    ],
+    "domains": [
+      "mailchimp.com",
+      "sendgrid.net",
+      "amazonses.com"
+    ],
+    "subjectPatterns": [
+      "^(Re:|Fwd:)?\\s*Newsletter",
+      "^(Re:|Fwd:)?\\s*Marketing",
+      "^(Re:|Fwd:)?\\s*Bulk"
+    ]
+  }
+}
+```
+
+### 除外条件
+
+以下のいずれかの条件に該当するメールはクレーム判定から除外されます:
+
+1. **特定のメールアドレス** (`emails`)
+   - 完全一致で判定
+   - 例: `noreply@example.com`, `marketing@example.com`
+
+2. **特定のドメイン** (`domains`)
+   - 送信者のドメインで判定
+   - 例: `mailchimp.com`, `constantcontact.com`
+
+3. **件名パターン** (`subjectPatterns`)
+   - 正規表現パターンで判定
+   - 例: Newsletter、Marketing、Bulkで始まる件名
+
+### 除外メールの処理
+
+除外されたメールは:
+- OpenAI APIでの分析をスキップ（コスト削減）
+- データベースには `category: 'excluded'` として記録
+- ログには「excluded from claim detection」として表示
 
 ## データベーススキーマ
 

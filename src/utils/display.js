@@ -155,9 +155,13 @@ ${claim.bodyContent}
   7️⃣  help        - このヘルプを表示
   8️⃣  exit        - アプリケーションを終了
 
-デバッグオプション:
-  process --debug / process -d   - デバッグモードでメール処理を実行
-                                  (AOAIリクエスト・レスポンスを詳細表示)
+processコマンドのオプション:
+  process --debug / process -d       - デバッグモードでメール処理を実行
+  process --days=7                   - 過去7日間のメールを処理
+  process --hours=24                 - 過去24時間のメールを処理
+  process --from=2025-08-20          - 指定日時以降のメールを処理
+  process --to=2025-08-22            - 指定日時までのメールを処理
+  process --from=2025-08-20 --to=2025-08-22  - 期間指定でメールを処理
 
 フィルター例:
   claims --category=product      - 商品関連のクレーム

@@ -98,14 +98,23 @@ export class CLI {
 
   async processEmails(args) {
     const debugMode = args.includes('--debug') || args.includes('-d');
+    const dateFilters = this.parseDateFilters(args);
     
     console.log('📧 メールの処理を開始します...');
     if (debugMode) {
       console.log('🔧 デバッグモードが有効です');
     }
     
+    if (dateFilters.days || dateFilters.hours || dateFilters.startDate || dateFilters.endDate) {
+      console.log('📅 期間指定:', this.formatDateFilters(dateFilters));
+    }
+    
     try {
-      const result = await this.detector.processEmails({ debug: debugMode });
+      const options = { 
+        debug: debugMode,
+        ...dateFilters
+      };
+      const result = await this.detector.processEmails(options);
       console.log(`✅ 処理完了: ${result.emailsProcessed}件のメールを処理し、${result.claimsDetected}件のクレームを検出しました`);
     } catch (error) {
       console.error('❌ メール処理中にエラーが発生しました:', error.message);
@@ -254,6 +263,56 @@ export class CLI {
     });
 
     return filters;
+  }
+
+  parseDateFilters(args) {
+    const filters = {};
+
+    args.forEach(arg => {
+      if (arg.startsWith('--')) {
+        const [key, value] = arg.substring(2).split('=');
+        if (key && value) {
+          switch (key) {
+            case 'days':
+              filters.days = parseInt(value);
+              break;
+            case 'hours':
+              filters.hours = parseInt(value);
+              break;
+            case 'from':
+              filters.startDate = new Date(value);
+              break;
+            case 'to':
+              filters.endDate = new Date(value);
+              break;
+          }
+        }
+      }
+    });
+
+    return filters;
+  }
+
+  formatDateFilters(filters) {
+    const parts = [];
+    
+    if (filters.days) {
+      parts.push(`過去${filters.days}日間`);
+    }
+    
+    if (filters.hours) {
+      parts.push(`過去${filters.hours}時間`);
+    }
+    
+    if (filters.startDate && filters.endDate) {
+      parts.push(`${filters.startDate.toLocaleDateString()} ～ ${filters.endDate.toLocaleDateString()}`);
+    } else if (filters.startDate) {
+      parts.push(`${filters.startDate.toLocaleDateString()} 以降`);
+    } else if (filters.endDate) {
+      parts.push(`${filters.endDate.toLocaleDateString()} まで`);
+    }
+    
+    return parts.join(', ');
   }
 
   async exit() {

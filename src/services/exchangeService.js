@@ -209,7 +209,7 @@ export class ExchangeService {
     });
   }
 
-  async getEmails(lastCheckDate = null) {
+  async getEmails(lastCheckDate = null, dateRange = null) {
     try {
       let query = `/users/${config.exchange.mailboxEmail}/messages`;
       
@@ -219,8 +219,24 @@ export class ExchangeService {
         `$top=${config.app.maxEmailsPerRun}`
       ];
 
-      if (lastCheckDate) {
-        queryParams.push(`$filter=receivedDateTime gt ${lastCheckDate.toISOString()}`);
+      // 期間フィルタリングの構築
+      const filterConditions = [];
+      
+      if (lastCheckDate && !dateRange) {
+        // 従来の差分取得ロジック
+        filterConditions.push(`receivedDateTime gt ${lastCheckDate.toISOString()}`);
+      } else if (dateRange) {
+        // 期間指定取得ロジック
+        if (dateRange.startDate) {
+          filterConditions.push(`receivedDateTime ge ${dateRange.startDate.toISOString()}`);
+        }
+        if (dateRange.endDate) {
+          filterConditions.push(`receivedDateTime le ${dateRange.endDate.toISOString()}`);
+        }
+      }
+
+      if (filterConditions.length > 0) {
+        queryParams.push(`$filter=${filterConditions.join(' and ')}`);
       }
 
       query += '?' + queryParams.join('&');
@@ -279,5 +295,48 @@ export class ExchangeService {
       .replace(/<[^>]*>/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
+  }
+
+  /**
+   * 期間を指定してメールを取得するヘルパーメソッド
+   * @param {Object} options - 期間指定オプション
+   * @param {Date} options.startDate - 開始日時
+   * @param {Date} options.endDate - 終了日時
+   * @param {number} options.daysAgo - 指定日数前から現在まで
+   * @param {number} options.hoursAgo - 指定時間前から現在まで
+   * @returns {Promise<Array>} メール配列
+   */
+  async getEmailsByDateRange(options = {}) {
+    const dateRange = this.buildDateRange(options);
+    return await this.getEmails(null, dateRange);
+  }
+
+  /**
+   * 日付範囲オブジェクトを構築するヘルパーメソッド
+   * @param {Object} options - 期間指定オプション
+   * @returns {Object} dateRangeオブジェクト
+   */
+  buildDateRange(options) {
+    const now = new Date();
+    let startDate = null;
+    let endDate = null;
+
+    if (options.startDate) {
+      startDate = new Date(options.startDate);
+    }
+
+    if (options.endDate) {
+      endDate = new Date(options.endDate);
+    }
+
+    if (options.daysAgo && !startDate) {
+      startDate = new Date(now.getTime() - (options.daysAgo * 24 * 60 * 60 * 1000));
+    }
+
+    if (options.hoursAgo && !startDate) {
+      startDate = new Date(now.getTime() - (options.hoursAgo * 60 * 60 * 1000));
+    }
+
+    return { startDate, endDate };
   }
 }

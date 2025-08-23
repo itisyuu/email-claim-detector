@@ -1,6 +1,8 @@
 import { ExchangeService } from './exchangeService.js';
 import { OpenAIService } from './openaiService.js';
 import { Database } from '../models/database.js';
+import fs from 'fs';
+import path from 'path';
 
 export class ClaimDetector {
   constructor() {
@@ -8,6 +10,7 @@ export class ClaimDetector {
     this.openaiService = new OpenAIService();
     this.database = new Database();
     this.isRunning = false;
+    this.exclusionList = null;
   }
 
   async initialize() {
@@ -17,6 +20,7 @@ export class ClaimDetector {
       await this.database.initialize();
       await this.exchangeService.initialize();
       this.openaiService.initialize();
+      this.loadExclusionList();
       
       console.log('All services initialized successfully');
     } catch (error) {
@@ -32,6 +36,7 @@ export class ClaimDetector {
     }
     
     const debugMode = options.debug || false;
+    const { days, hours, startDate, endDate } = options;
 
     this.isRunning = true;
     const startTime = new Date();
@@ -42,10 +47,23 @@ export class ClaimDetector {
     try {
       console.log('Starting email processing...');
 
-      const lastProcessingTime = await this.database.getLastProcessingTime();
-      console.log('Last processing time:', lastProcessingTime);
-
-      const emails = await this.exchangeService.getEmails(lastProcessingTime);
+      let emails;
+      if (days || hours || startDate || endDate) {
+        const dateRangeOptions = {};
+        
+        if (days) dateRangeOptions.daysAgo = days;
+        if (hours) dateRangeOptions.hoursAgo = hours;
+        if (startDate) dateRangeOptions.startDate = startDate;
+        if (endDate) dateRangeOptions.endDate = endDate;
+        
+        console.log('Using date range options:', dateRangeOptions);
+        emails = await this.exchangeService.getEmailsByDateRange(dateRangeOptions);
+      } else {
+        const lastProcessingTime = await this.database.getLastProcessingTime();
+        console.log('Last processing time:', lastProcessingTime);
+        emails = await this.exchangeService.getEmails(lastProcessingTime);
+      }
+      
       console.log(`Retrieved ${emails.length} emails`);
 
       if (emails.length === 0) {
@@ -72,7 +90,19 @@ export class ClaimDetector {
           emailDetails.bodyContent = emailText;
           const savedEmailId = await this.database.saveEmail(emailDetails);
 
-          if (emailText.trim()) {
+          if (this.shouldExcludeFromClaimDetection(senderEmail, emailDetails.subject)) {
+            console.log(`Email from ${senderEmail} excluded from claim detection (bulk/automated email)`);
+            const excludedResult = {
+              isClaim: false,
+              confidence: 0,
+              category: 'excluded',
+              severity: 'none',
+              reason: 'Email excluded from claim detection due to sender/subject filters',
+              keywords: [],
+              summary: 'Excluded from analysis'
+            };
+            await this.database.saveClaim(savedEmailId, excludedResult);
+          } else if (emailText.trim()) {
             console.log(`Analyzing email for claims...`);
             const analysisResult = await this.openaiService.analyzeEmailForClaim(
               emailText,
@@ -194,6 +224,53 @@ export class ClaimDetector {
         else resolve(rows);
       });
     });
+  }
+
+  loadExclusionList() {
+    try {
+      const exclusionPath = path.join(process.cwd(), 'src/config/exclusionList.json');
+      if (fs.existsSync(exclusionPath)) {
+        const exclusionData = fs.readFileSync(exclusionPath, 'utf8');
+        this.exclusionList = JSON.parse(exclusionData);
+        console.log('Exclusion list loaded successfully');
+      } else {
+        console.log('No exclusion list found, proceeding without filters');
+        this.exclusionList = { excludeFromClaimDetection: { emails: [], domains: [], subjectPatterns: [] } };
+      }
+    } catch (error) {
+      console.error('Error loading exclusion list:', error);
+      this.exclusionList = { excludeFromClaimDetection: { emails: [], domains: [], subjectPatterns: [] } };
+    }
+  }
+
+  shouldExcludeFromClaimDetection(senderEmail, subject) {
+    if (!this.exclusionList || !this.exclusionList.excludeFromClaimDetection) {
+      return false;
+    }
+
+    const { emails, domains, subjectPatterns } = this.exclusionList.excludeFromClaimDetection;
+    
+    if (emails.includes(senderEmail.toLowerCase())) {
+      return true;
+    }
+    
+    const domain = senderEmail.split('@')[1]?.toLowerCase();
+    if (domain && domains.includes(domain)) {
+      return true;
+    }
+    
+    for (const pattern of subjectPatterns) {
+      try {
+        const regex = new RegExp(pattern, 'i');
+        if (regex.test(subject)) {
+          return true;
+        }
+      } catch (error) {
+        console.warn(`Invalid regex pattern: ${pattern}`);
+      }
+    }
+    
+    return false;
   }
 
   delay(ms) {
