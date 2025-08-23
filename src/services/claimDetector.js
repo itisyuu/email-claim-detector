@@ -1,5 +1,6 @@
 import { ExchangeService } from './exchangeService.js';
 import { OpenAIService } from './openaiService.js';
+import { LocalLLMService } from './localLLMService.js';
 import { Database } from '../models/database.js';
 import fs from 'fs';
 import path from 'path';
@@ -8,6 +9,7 @@ export class ClaimDetector {
   constructor() {
     this.exchangeService = new ExchangeService();
     this.openaiService = new OpenAIService();
+    this.localLLMService = new LocalLLMService();
     this.database = new Database();
     this.isRunning = false;
     this.exclusionList = null;
@@ -36,7 +38,16 @@ export class ClaimDetector {
     }
     
     const debugMode = options.debug || false;
-    const { days, hours, startDate, endDate } = options;
+    const { days, hours, startDate, endDate, useLocalLLM } = options;
+
+    // Local LLM使用時はサーバーを自動起動
+    if (useLocalLLM) {
+      console.log('🤖 Local LLM mode detected, starting ONNX NPU Server...');
+      const serverStarted = await this.localLLMService.startServer();
+      if (!serverStarted) {
+        throw new Error('Failed to start ONNX NPU Server');
+      }
+    }
 
     this.isRunning = true;
     const startTime = new Date();
@@ -104,12 +115,25 @@ export class ClaimDetector {
             await this.database.saveClaim(savedEmailId, excludedResult);
           } else if (emailText.trim()) {
             console.log(`Analyzing email for claims...`);
-            const analysisResult = await this.openaiService.analyzeEmailForClaim(
-              emailText,
-              emailDetails.subject,
-              `${senderName} <${senderEmail}>`,
-              debugMode
-            );
+            let analysisResult;
+            
+            if (options.useLocalLLM) {
+              console.log('Using Local LLM for analysis...');
+              analysisResult = await this.localLLMService.analyzeEmailForClaim(
+                emailText,
+                emailDetails.subject,
+                `${senderName} <${senderEmail}>`,
+                debugMode
+              );
+            } else {
+              console.log('Using Azure OpenAI for analysis...');
+              analysisResult = await this.openaiService.analyzeEmailForClaim(
+                emailText,
+                emailDetails.subject,
+                `${senderName} <${senderEmail}>`,
+                debugMode
+              );
+            }
 
             await this.database.saveClaim(savedEmailId, analysisResult);
 
@@ -192,10 +216,16 @@ export class ClaimDetector {
     }
   }
 
-  async generateReport() {
+  async generateReport(useLocalLLM = false) {
     try {
       const claims = await this.getClaims({ limit: 100 });
-      return await this.openaiService.generateClaimReport(claims);
+      if (useLocalLLM) {
+        console.log('Using Local LLM for report generation...');
+        return await this.localLLMService.generateClaimReport(claims);
+      } else {
+        console.log('Using Azure OpenAI for report generation...');
+        return await this.openaiService.generateClaimReport(claims);
+      }
     } catch (error) {
       console.error('Error generating report:', error);
       throw error;
@@ -279,9 +309,17 @@ export class ClaimDetector {
 
   async shutdown() {
     console.log('Shutting down services...');
+    
+    // Local LLM サーバーを停止
+    if (this.localLLMService) {
+      await this.localLLMService.stopServer();
+    }
+    
+    // データベースを閉じる
     if (this.database) {
       await this.database.close();
     }
+    
     console.log('Services shut down successfully');
   }
 }
