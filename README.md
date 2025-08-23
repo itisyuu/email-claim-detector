@@ -7,7 +7,7 @@ Exchange Online から Delegate 権限でメールを取得し、Azure OpenAI �
 - 🔐 Azure AD を使用した Exchange Online 認証
 - 📧 Delegate 権限でのメール取得
 - 📅 期間を指定したメール取得（日時範囲、過去n日/時間）
-- 🤖 Azure OpenAI によるクレーム自動検知
+- 🤖 Azure OpenAI またはローカルLLM によるクレーム自動検知
 - 📊 SQLite での処理結果保存・管理
 - 📈 クレーム統計とレポート生成
 - 💻 インタラクティブな CLI インターフェース
@@ -30,10 +30,16 @@ Exchange Online から Delegate 権限でメールを取得し、Azure OpenAI �
 - 認証したユーザーが対象メールボックスに対する適切なアクセス権限を持つこと
 - Exchange Online での代理アクセス権限（必要に応じて）
 
-### 3. Azure OpenAI
+### 3. AI サービス
 
+#### Azure OpenAI（推奨）
 - Azure OpenAI リソースの作成
 - GPT-4 や GPT-3.5-turbo のデプロイメント
+
+#### ローカルLLM（ONNX Runtime NPU対応）
+- ONNX Runtime + NPU による高速ローカル推論
+- localhost:5834 での実行（OpenAI互換API）
+- 自動サーバー管理機能付き
 
 ## セットアップ
 
@@ -44,7 +50,23 @@ cd email-claim-detector
 npm install
 ```
 
-### 2. 環境変数の設定
+### 2. ローカルLLMモデルの準備（オプション）
+
+ローカルLLM機能を使用する場合は、ONNXモデルをダウンロードしてください：
+
+```bash
+# modelsディレクトリ作成
+mkdir -p models
+cd models
+
+# 推奨モデルのダウンロード（Phi-3-Mini）
+wget -O phi-3-mini-4k-instruct-cpu-int4.onnx \
+  "https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-onnx/resolve/main/cpu_and_mobile/cpu-int4-rtn-block-32-acc-level-4/phi-3-mini-4k-instruct-cpu-int4-rtn-block-32-acc-level-4.onnx"
+
+cd ..
+```
+
+### 3. 環境変数の設定
 
 ```bash
 cp .env.example .env
@@ -89,9 +111,51 @@ npm start
 | `claims`  | 検出されたクレーム一覧を表示    | `claims --severity=high` |
 | `stats`   | クレーム統計を表示              | `stats`                  |
 | `report`  | AI によるクレームレポートを生成 | `report`                 |
+| `server`  | ONNX NPUサーバーを管理          | `server start`           |
 | `logs`    | 処理ログを表示                  | `logs`                   |
 | `help`    | ヘルプを表示                    | `help`                   |
 | `exit`    | アプリケーションを終了          | `exit`                   |
+
+### processコマンドのオプション
+
+| オプション     | 説明                          | 例                        |
+| -------------- | ----------------------------- | ------------------------- |
+| `--localllm`   | ローカルLLMを使用             | `process --localllm`      |
+| `--debug`      | デバッグモードを有効化        | `process --debug`         |
+| `--days=n`     | 過去n日間のメールを処理       | `process --days=7`        |
+| `--hours=n`    | 過去n時間のメールを処理       | `process --hours=24`      |
+| `--from=date`  | 指定日時以降のメールを処理    | `process --from=2024-01-01` |
+| `--to=date`    | 指定日時までのメールを処理    | `process --to=2024-01-31` |
+
+### serverコマンドのオプション
+
+| サブコマンド | 説明                          | 例                        |
+| ------------ | ----------------------------- | ------------------------- |
+| `start`      | ONNX NPUサーバーを起動        | `server start`            |
+| `stop`       | ONNX NPUサーバーを停止        | `server stop`             |
+| `status`     | サーバー状態を確認            | `server status`           |
+| `restart`    | サーバーを再起動              | `server restart`          |
+
+### 組み合わせ例
+
+```bash
+# ONNX Runtime NPUで過去3日間のメールを処理（デバッグ有効）
+process --localllm --days=3 --debug
+
+# ONNX Runtime NPUでレポート生成
+report --localllm
+
+# サーバー管理
+server start    # サーバー起動
+server status   # 状態確認
+server stop     # サーバー停止
+
+# Azure OpenAIで特定期間のメールを処理
+process --from=2024-01-01 --to=2024-01-31
+
+# ONNX Runtime NPUで過去24時間のメールを処理
+process --localllm --hours=24
+```
 
 ### 期間指定でのメール取得
 
@@ -161,12 +225,16 @@ claims --category=service --severity=high --limit=5
 email-claim-detector/
 ├── src/
 │   ├── config/
-│   │   └── config.js          # 設定管理
+│   │   ├── config.js          # 設定管理
+│   │   └── exclusionList.json # クレーム判定除外設定
 │   ├── models/
 │   │   └── database.js        # データベース操作
+│   ├── servers/
+│   │   └── onnxNpuServer.js   # ONNX Runtime NPUサーバー
 │   ├── services/
 │   │   ├── exchangeService.js # Exchange Online連携（期間指定機能含む）
 │   │   ├── openaiService.js   # Azure OpenAI連携
+│   │   ├── localLLMService.js # ローカルLLM連携 + サーバー管理
 │   │   └── claimDetector.js   # メインロジック
 │   ├── utils/
 │   │   └── display.js         # 表示ユーティリティ
@@ -273,6 +341,186 @@ email-claim-detector/
 
 処理実行ログを保存
 
+## ONNX Runtime NPU機能
+
+ONNX Runtime + NPUを使用した高速ローカル推論によりクレーム判定を行うことができます。
+
+### 必要条件
+
+- NPU搭載PC (Copilot+ PC推奨)
+- ONNX形式のPhi-3またはその他のLLMモデル
+- Express.js + ONNX Runtime Node.js環境
+
+### 自動サーバー管理
+
+`process --localllm` コマンドを実行すると、自動的にONNX NPUサーバーが起動されます：
+
+```bash
+# 自動でサーバーが起動され、クレーム判定を実行
+process --localllm
+
+# レポート生成時も自動起動
+report --localllm
+
+# 手動でサーバー管理
+server start    # サーバー起動
+server status   # 状態確認  
+server stop     # サーバー停止
+server restart  # 再起動
+```
+
+### 技術仕様
+
+- **推論エンジン**: ONNX Runtime with DirectML
+- **NPU加速**: DirectML execution provider
+- **API互換性**: OpenAI Chat Completions API
+- **サーバーポート**: 5834 (設定可能)
+- **プロトコル**: HTTP/JSON
+
+### スタンドアローン実行
+
+サーバーを独立して実行することも可能です：
+
+```bash
+# NPMスクリプトから起動
+npm run server
+
+# 直接実行
+node src/servers/onnxNpuServer.js
+
+# 開発モード（ファイル監視）
+npm run server:dev
+```
+
+### ONNX Runtime NPUの利点
+
+- **高速推論**: NPUによるハードウェア加速
+- **プライバシー**: メールデータがローカルで処理される  
+- **コスト効率**: Azure OpenAI APIの使用料金が不要
+- **低レイテンシ**: ネットワーク遅延がなく高速レスポンス
+- **オフライン動作**: インターネット接続不要で動作
+- **自動管理**: サーバーの起動・停止を自動化
+
+### モデル選択ガイド
+
+**日本語クレーム判定における推奨モデル（性能順）:**
+
+1. **Phi-3-Mini-4K-Instruct** 🌟 推奨
+   - パラメータ数: 3.8B
+   - 日本語対応: 優秀
+   - 速度: 高速
+   - メモリ: 4GB RAM
+   - 用途: 一般的なクレーム判定に最適
+
+2. **Phi-3-Medium-4K-Instruct** 
+   - パラメータ数: 14B
+   - 日本語対応: 最高品質
+   - 速度: 中程度
+   - メモリ: 16GB RAM
+   - 用途: 複雑なクレーム分析
+
+3. **Llama-2-7B-Chat-Japanese**
+   - パラメータ数: 7B
+   - 日本語対応: 良好
+   - 速度: 中程度  
+   - メモリ: 8GB RAM
+   - 用途: バランス重視
+
+**ハードウェア別推奨設定:**
+
+```bash
+# NPU搭載PC (Copilot+ PC)
+ONNX_MODEL_PATH=./models/phi-3-mini-4k-instruct-directml-int4.onnx
+ONNX_EXECUTION_PROVIDERS=dml,cpu
+
+# 高性能CPU 
+ONNX_MODEL_PATH=./models/phi-3-mini-4k-instruct-cpu-int4.onnx
+ONNX_EXECUTION_PROVIDERS=cpu
+
+# GPU搭載PC
+ONNX_MODEL_PATH=./models/phi-3-mini-4k-instruct-cuda-fp16.onnx
+ONNX_EXECUTION_PROVIDERS=cuda,cpu
+```
+
+### モデルの配置とダウンロード
+
+**1. モデル配置ディレクトリの作成:**
+
+```bash
+# プロジェクトルートからmodelsディレクトリを作成
+cd email-claim-detector
+mkdir -p models
+cd models
+```
+
+**2. 推奨モデルのダウンロード:**
+
+```bash
+# Phi-3-Mini CPU版 (推奨・軽量)
+wget -O phi-3-mini-4k-instruct-cpu-int4.onnx \
+  https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-onnx/resolve/main/cpu_and_mobile/cpu-int4-rtn-block-32-acc-level-4/phi-3-mini-4k-instruct-cpu-int4-rtn-block-32-acc-level-4.onnx
+
+# Phi-3-Mini NPU最適化版 (Copilot+ PC推奨)
+wget -O phi-3-mini-4k-instruct-directml-int4.onnx \
+  https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-onnx-directml/resolve/main/directml/directml-int4-awq-block-128/phi3-mini-4k-instruct-directml-int4-awq-block-128.onnx
+```
+
+**3. ディレクトリ構造:**
+
+```
+email-claim-detector/
+├── src/
+├── models/                    # ← ここにモデルファイルを配置
+│   ├── phi-3-mini-4k-instruct-cpu-int4.onnx
+│   ├── phi-3-mini-4k-instruct-directml-int4.onnx
+│   └── [その他のモデルファイル]
+├── data/
+├── .env
+└── package.json
+```
+
+**4. .env設定での指定:**
+
+```bash
+# 相対パスで指定（推奨）
+ONNX_MODEL_PATH=./models/phi-3-mini-4k-instruct-cpu-int4.onnx
+
+# 絶対パスでも可能
+ONNX_MODEL_PATH=/full/path/to/email-claim-detector/models/phi-3-mini-4k-instruct-cpu-int4.onnx
+```
+
+**5. モデルファイルの確認:**
+
+```bash
+# ファイルサイズと存在確認
+ls -lh models/
+
+# 設定確認（アプリケーション内から）
+server status
+```
+
+**6. 複数モデルの管理:**
+
+```bash
+# 用途別にファイル名を整理
+models/
+├── phi-3-mini-cpu-int4.onnx        # 軽量・高速
+├── phi-3-mini-npu-int4.onnx        # NPU最適化
+├── phi-3-medium-cpu-fp16.onnx      # 高精度
+└── llama-2-7b-chat-jp.onnx         # 日本語特化
+
+# .envで使用するモデルを切り替え
+ONNX_MODEL_PATH=./models/phi-3-mini-npu-int4.onnx  # NPU使用時
+ONNX_MODEL_PATH=./models/phi-3-mini-cpu-int4.onnx  # CPU使用時
+```
+
+### 制限事項
+
+- NPU搭載PCでの利用を推奨
+- ONNX形式のモデルが必要
+- モデルサイズによる処理能力の違い
+- メモリ使用量がモデルサイズに依存
+
 ## トラブルシューティング
 
 ### 認証エラー
@@ -286,8 +534,57 @@ email-claim-detector/
 - Delegate 権限が正しく設定されているか確認
 - MAILBOX_EMAIL が存在するメールボックスか確認
 
-### OpenAI エラー
+### Azure OpenAI エラー
 
 - Azure OpenAI のエンドポイントと API キーが正しく設定されているか確認
 - デプロイメント名が正しいか確認
 - API クォータが十分あるか確認
+
+### ONNX Runtime NPU エラー
+
+**モデルファイルが見つからない:**
+```bash
+# モデルファイルの存在確認
+ls -la models/
+
+# パスを確認
+echo $ONNX_MODEL_PATH
+
+# モデルを再ダウンロード
+cd models
+wget -O phi-3-mini-4k-instruct-cpu-int4.onnx [URL]
+```
+
+**サーバーが起動しない:**
+```bash
+# ポートが使用中でないか確認
+netstat -an | grep 5834
+lsof -i :5834
+
+# 手動でサーバー起動してエラー確認
+npm run server
+
+# ログでエラー詳細確認
+server status
+```
+
+**NPU/DirectMLが使用されない:**
+```bash
+# 実行プロバイダーの確認
+ONNX_EXECUTION_PROVIDERS=dml,cpu
+
+# NPUドライバーの確認（Windows）
+dxdiag
+
+# DirectMLの確認
+server status  # execution_providersを確認
+```
+
+**メモリ不足エラー:**
+```bash
+# より軽量なモデルを使用
+ONNX_MODEL_PATH=./models/phi-3-mini-cpu-int4.onnx
+
+# 最大トークン数を削減
+ONNX_MAX_TOKENS=256
+```

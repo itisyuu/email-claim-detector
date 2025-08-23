@@ -7,6 +7,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
+    "server": "node src/servers/onnxNpuServer.js",
+    "server:dev": "node --watch src/servers/onnxNpuServer.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": ["exchange", "email", "claim-detection", "azure-openai"],
@@ -19,7 +21,9 @@
     "sqlite3": "^5.1.6",
     "dotenv": "^16.3.1",
     "isomorphic-fetch": "^3.0.0",
-    "open": "^8.4.2"
+    "open": "^8.4.2",
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
   },
   "devDependencies": {
     "@types/node": "^20.11.17"

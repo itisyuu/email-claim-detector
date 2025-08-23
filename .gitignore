@@ -6,3 +6,11 @@ logs/
 .DS_Store
 .vscode/
 temp/
+
+# ONNX Models (large files)
+models/*.onnx
+models/*.bin
+models/*.safetensors
+
+# Keep models directory structure
+!models/.gitkeep
