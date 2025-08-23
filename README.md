@@ -164,7 +164,7 @@ process --localllm --hours=24
 #### プログラム内での使用例
 
 ```javascript
-import { ExchangeService } from './src/services/exchangeService.js';
+import { ExchangeService } from './src/infrastructure/email/exchangeService.js';
 
 const exchangeService = new ExchangeService();
 await exchangeService.initialize();
@@ -224,25 +224,32 @@ claims --category=service --severity=high --limit=5
 ```
 email-claim-detector/
 ├── src/
+│   ├── application/                        # アプリケーション層
+│   │   └── claimDetectionOrchestrator.js  # メインオーケストレーション処理
+│   ├── infrastructure/                     # インフラストラクチャ層
+│   │   ├── ai/                            # AI連携
+│   │   │   ├── baseAIService.js           # AI共通基底クラス
+│   │   │   ├── openaiService.js           # Azure OpenAI連携
+│   │   │   └── localLLMService.js         # ローカルLLM連携 + サーバー管理
+│   │   ├── database/                      # データベース
+│   │   │   └── database.js                # データベース操作
+│   │   └── email/                         # メール連携
+│   │       └── exchangeService.js         # Exchange Online連携（期間指定機能含む）
+│   ├── presentation/                       # プレゼンテーション層
+│   │   └── formatters/                    # フォーマッター
+│   │       └── claimFormatter.js          # クレーム表示フォーマッター
 │   ├── config/
-│   │   ├── config.js          # 設定管理
-│   │   └── exclusionList.json # クレーム判定除外設定
-│   ├── models/
-│   │   └── database.js        # データベース操作
+│   │   ├── config.js                      # 設定管理
+│   │   └── exclusionList.json             # クレーム判定除外設定
 │   ├── servers/
-│   │   └── onnxNpuServer.js   # ONNX Runtime NPUサーバー
-│   ├── services/
-│   │   ├── exchangeService.js # Exchange Online連携（期間指定機能含む）
-│   │   ├── openaiService.js   # Azure OpenAI連携
-│   │   ├── localLLMService.js # ローカルLLM連携 + サーバー管理
-│   │   └── claimDetector.js   # メインロジック
-│   ├── utils/
-│   │   └── display.js         # 表示ユーティリティ
-│   ├── cli.js                 # CLIインターフェース
-│   └── index.js               # エントリーポイント
-├── data/                      # データベースファイル
-├── .env.example              # 環境変数テンプレート
-├── .env                      # 環境変数 (作成が必要)
+│   │   └── onnxNpuServer.js               # ONNX Runtime NPUサーバー
+│   ├── services/                          # 後方互換性（非推奨）
+│   │   └── claimDetector.js               # ClaimDetectionOrchestratorのラッパー
+│   ├── cli.js                             # CLIインターフェース
+│   └── index.js                           # エントリーポイント
+├── data/                                  # データベースファイル
+├── .env.example                          # 環境変数テンプレート
+├── .env                                  # 環境変数 (作成が必要)
 ├── package.json
 └── README.md
 ```
@@ -261,10 +268,10 @@ email-claim-detector/
 
 ### カテゴリ
 
-- `product`: 商品関連
-- `service`: サービス関連
-- `billing`: 請求関連
-- `delivery`: 配送関連
+- `answer quality`: 回答品質関連
+- `answer delay`: 回答遅延関連
+- `point less conversation`: 無意味な会話
+- `communication`: コミュニケーション関連
 - `other`: その他
 - `not_claim`: クレームではない
 
@@ -520,6 +527,48 @@ ONNX_MODEL_PATH=./models/phi-3-mini-cpu-int4.onnx  # CPU使用時
 - ONNX形式のモデルが必要
 - モデルサイズによる処理能力の違い
 - メモリ使用量がモデルサイズに依存
+
+## アーキテクチャ設計
+
+### レイヤー構造
+
+Clean Architectureの原則に基づいたレイヤー分離アーキテクチャを採用しています：
+
+#### Application Layer（アプリケーション層）
+- **ClaimDetectionOrchestrator**: メインのビジネスロジックオーケストレーション
+- 複数のInfrastructure Serviceを協調させて処理を実行
+
+#### Infrastructure Layer（インフラストラクチャ層）
+- **AI Services**: AI連携の抽象化と実装
+  - `BaseAIService`: 共通AI処理の基底クラス（Template Method Pattern）
+  - `OpenAIService`: Azure OpenAI実装
+  - `LocalLLMService`: ローカルLLM実装
+- **Email Services**: メール取得の実装
+  - `ExchangeService`: Exchange Online連携
+- **Database Services**: データ永続化
+  - `Database`: SQLiteデータベース操作
+
+#### Presentation Layer（プレゼンテーション層）
+- **Formatters**: データ表示フォーマット
+  - `ClaimFormatter`: クレーム表示専用フォーマッター
+
+#### 後方互換性
+- **services/claimDetector.js**: 既存コードとの互換性を保持（非推奨）
+
+### 設計パターン
+
+1. **Template Method Pattern**: `BaseAIService`で共通処理を定義
+2. **Strategy Pattern**: AI実装を切り替え可能
+3. **Facade Pattern**: `ClaimDetectionOrchestrator`でサービスを統合
+4. **Dependency Injection**: コンストラクタでサービスを注入
+
+### 利点
+
+1. **責務の明確化**: 各レイヤーが明確な責務を持つ
+2. **テスト容易性**: 各レイヤーを独立してテスト可能
+3. **拡張性**: 新しいAIプロバイダの追加が容易
+4. **保守性**: 変更の影響範囲が限定される
+5. **コード重複削除**: 共通処理の一元化（約500行削減）
 
 ## トラブルシューティング
 

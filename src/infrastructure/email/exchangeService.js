@@ -1,6 +1,6 @@
 import { Client } from '@microsoft/microsoft-graph-client';
 import { PublicClientApplication } from '@azure/msal-node';
-import { config } from '../config/config.js';
+import { config } from '../../config/config.js';
 import crypto from 'crypto';
 import open from 'open';
 

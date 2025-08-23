@@ -1,8 +1,10 @@
 import OpenAI from 'openai';
-import { config } from '../config/config.js';
+import { config } from '../../config/config.js';
+import { BaseAIService } from './baseAIService.js';
 
-export class OpenAIService {
+export class OpenAIService extends BaseAIService {
   constructor() {
+    super();
     this.client = null;
   }
 
@@ -17,112 +19,68 @@ export class OpenAIService {
     });
   }
 
-  async analyzeEmailForClaim(emailContent, subject = '', sender = '', debug = false) {
-    try {
-      const prompt = this.buildClaimAnalysisPrompt(emailContent, subject, sender);
-      
-      const requestPayload = {
-        messages: [
-          {
-            role: 'system',
-            content: 'あなたは情シス部門がユーザから受けるメールがクレームかどうかを判定する専門のAIアシスタントです。日本語で回答してください。'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        max_completion_tokens: 2000,
-        temperature: 1,
-      };
-
-      if (debug) {
-        console.log('\n🔧 ===== AOAI DEBUG: リクエスト =====');
-        console.log('📧 件名:', subject);
-        console.log('👤 差出人:', sender);
-        console.log('📝 メール本文:');
-        console.log(emailContent.substring(0, 200) + (emailContent.length > 200 ? '...' : ''));
-        console.log('\n🤖 AOAIへのリクエスト:');
-        console.log('エンドポイント:', `${config.openai.endpoint}/openai/deployments/${config.openai.deploymentName}`);
-        console.log('リクエストペイロード:', JSON.stringify(requestPayload, null, 2));
-        console.log('================================\n');
-      }
-      
-      const response = await this.client.chat.completions.create(requestPayload);
-
-      if (debug) {
-        console.log('\n🔧 ===== AOAI DEBUG: レスポンス =====');
-        console.log('📊 レスポンス統計:');
-        console.log('- プロンプトトークン数:', response.usage?.prompt_tokens || 'N/A');
-        console.log('- 完了トークン数:', response.usage?.completion_tokens || 'N/A');
-        console.log('- 総トークン数:', response.usage?.total_tokens || 'N/A');
-        console.log('- モデル:', response.model || 'N/A');
-        console.log('- 作成時間:', response.created || 'N/A');
-        console.log('- レスポンスID:', response.id || 'N/A');
-        console.log('- choices配列長:', response.choices?.length || 0);
-        
-        if (!response.choices || response.choices.length === 0) {
-          console.log('❌ 警告: choices配列が空またはundefined');
-        } else {
-          console.log('- 選択されたchoiceのindex:', 0);
-          console.log('- choice.finish_reason:', response.choices[0].finish_reason || 'N/A');
-          console.log('- choice.message.role:', response.choices[0].message?.role || 'N/A');
-          console.log('- choice.message.content長:', response.choices[0].message?.content?.length || 0);
+  async callAI(prompt, debug = false) {
+    const requestPayload = {
+      messages: [
+        {
+          role: 'system',
+          content: 'あなたは情シス部門がユーザから受けるメールがクレームかどうかを判定する専門のAIアシスタントです。日本語で回答してください。'
+        },
+        {
+          role: 'user',
+          content: prompt
         }
-        
-        console.log('\n💬 AOAIからの生レスポンス:');
-        const content = response.choices[0].message.content;
-        if (!content) {
-          console.log('❌ 警告: メッセージコンテンツがnullまたはundefined');
-        } else if (content.trim() === '') {
-          console.log('❌ 警告: メッセージコンテンツが空文字列');
-        } else {
-          console.log(content);
-        }
-        console.log('===================================\n');
-      }
+      ],
+      max_completion_tokens: 2000,
+      temperature: 1,
+    };
 
-      const result = response.choices[0].message.content;
-      const parsedResult = this.parseAnalysisResult(result, debug);
-
-      if (debug) {
-        console.log('\n🔧 ===== AOAI DEBUG: 解析結果 =====');
-        console.log('🎯 クレーム判定:', parsedResult.isClaim ? 'YES' : 'NO');
-        console.log('📊 信頼度:', parsedResult.confidence + '%');
-        console.log('🏷️ カテゴリ:', parsedResult.category);
-        console.log('⚠️ 重要度:', parsedResult.severity);
-        console.log('💡 判定理由:', parsedResult.reason);
-        console.log('🔍 キーワード:', parsedResult.keywords.join(', ') || 'なし');
-        console.log('📋 要約:', parsedResult.summary);
-        
-        if (parsedResult.parseError) {
-          console.log('❌ パースエラー詳細:', parsedResult.parseError);
-        }
-        
-        if (parsedResult.confidence === 0 && parsedResult.reason.includes('失敗')) {
-          console.log('⚠️  注意: 解析失敗により、デフォルト値が使用されています');
-        }
-        
-        console.log('=================================\n');
-      }
-
-      return parsedResult;
-
-    } catch (error) {
-      if (debug) {
-        console.log('\n🔧 ===== AOAI DEBUG: エラー =====');
-        console.log('❌ エラータイプ:', error.constructor.name);
-        console.log('❌ エラーメッセージ:', error.message);
-        console.log('❌ エラースタック:', error.stack);
-        if (error.response) {
-          console.log('❌ HTTPステータス:', error.response.status);
-          console.log('❌ レスポンスデータ:', error.response.data);
-        }
-        console.log('==============================\n');
-      }
-      console.error('Error analyzing email for claim:', error);
-      throw error;
+    if (debug) {
+      console.log('\n🤖 AOAIへのリクエスト:');
+      console.log('エンドポイント:', `${config.openai.endpoint}/openai/deployments/${config.openai.deploymentName}`);
+      console.log('リクエストペイロード:', JSON.stringify(requestPayload, null, 2));
+      console.log('================================\n');
     }
+    
+    const response = await this.client.chat.completions.create(requestPayload);
+
+    if (debug) {
+      console.log('\n🔧 ===== AOAI DEBUG: レスポンス =====');
+      console.log('📊 レスポンス統計:');
+      console.log('- プロンプトトークン数:', response.usage?.prompt_tokens || 'N/A');
+      console.log('- 完了トークン数:', response.usage?.completion_tokens || 'N/A');
+      console.log('- 総トークン数:', response.usage?.total_tokens || 'N/A');
+      console.log('- モデル:', response.model || 'N/A');
+      console.log('- 作成時間:', response.created || 'N/A');
+      console.log('- レスポンスID:', response.id || 'N/A');
+      console.log('- choices配列長:', response.choices?.length || 0);
+      
+      if (!response.choices || response.choices.length === 0) {
+        console.log('❌ 警告: choices配列が空またはundefined');
+      } else {
+        console.log('- 選択されたchoiceのindex:', 0);
+        console.log('- choice.finish_reason:', response.choices[0].finish_reason || 'N/A');
+        console.log('- choice.message.role:', response.choices[0].message?.role || 'N/A');
+        console.log('- choice.message.content長:', response.choices[0].message?.content?.length || 0);
+      }
+      
+      console.log('\n💬 AOAIからの生レスポンス:');
+      const content = response.choices[0].message.content;
+      if (!content) {
+        console.log('❌ 警告: メッセージコンテンツがnullまたはundefined');
+      } else if (content.trim() === '') {
+        console.log('❌ 警告: メッセージコンテンツが空文字列');
+      } else {
+        console.log(content);
+      }
+      console.log('===================================\n');
+    }
+
+    return response.choices[0].message.content;
+  }
+
+  getServiceName() {
+    return 'Azure OpenAI';
   }
 
   buildClaimAnalysisPrompt(emailContent, subject, sender) {
@@ -174,7 +132,7 @@ ${emailContent}
         confidence: 0,
         category: 'other',
         severity: 'medium',
-        reason: 'AIから空のレスポンスが返されました',
+        reason: 'Azure OpenAIから空のレスポンスが返されました',
         keywords: [],
         summary: '',
         rawResponse: result,
@@ -263,7 +221,7 @@ ${emailContent}
           confidence: 0,
           category: 'other',
           severity: 'medium',
-          reason: 'AIレスポンスにJSON構造が見つかりませんでした',
+          reason: 'Azure OpenAIレスポンスにJSON構造が見つかりませんでした',
           keywords: [],
           summary: '',
           rawResponse: result,
@@ -276,13 +234,13 @@ ${emailContent}
         console.log('❌ エラースタック:', parseError.stack);
         console.log('=================================\n');
       }
-      console.error('Error parsing AI response:', parseError);
+      console.error('Error parsing Azure OpenAI response:', parseError);
       return {
         isClaim: false,
         confidence: 0,
         category: 'other',
         severity: 'medium',
-        reason: `AI応答の解析に失敗しました: ${parseError.message}`,
+        reason: `Azure OpenAI応答の解析に失敗しました: ${parseError.message}`,
         keywords: [],
         summary: '',
         rawResponse: result,
@@ -331,7 +289,7 @@ ${index + 1}. 件名: ${claim.subject}
 
       return response.choices[0].message.content;
     } catch (error) {
-      console.error('Error generating claim report:', error);
+      console.error('Error generating claim report with Azure OpenAI:', error);
       return 'レポート生成中にエラーが発生しました。';
     }
   }

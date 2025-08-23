@@ -1,7 +1,7 @@
 import sqlite3 from 'sqlite3';
 import { promises as fs } from 'fs';
 import path from 'path';
-import { config } from '../config/config.js';
+import { config } from '../../config/config.js';
 
 export class Database {
   constructor() {
