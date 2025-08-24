@@ -53,7 +53,7 @@ export class ExchangeService {
       const accounts = await this.msalClient.getTokenCache().getAllAccounts();
       if (accounts.length > 0) {
         const silentRequest = {
-          scopes: ['https://graph.microsoft.com/Mail.Read', 'https://graph.microsoft.com/User.Read'],
+          scopes: ['https://graph.microsoft.com/Mail.Read', 'https://graph.microsoft.com/Mail.Read.Shared', 'https://graph.microsoft.com/User.Read'],
           account: accounts[0],
         };
 
@@ -85,7 +85,7 @@ export class ExchangeService {
       const pkceCodes = this.generatePKCECodes();
       
       const authCodeUrlParameters = {
-        scopes: ['https://graph.microsoft.com/Mail.Read', 'https://graph.microsoft.com/User.Read'],
+        scopes: ['https://graph.microsoft.com/Mail.Read', 'https://graph.microsoft.com/Mail.Read.Shared', 'https://graph.microsoft.com/User.Read'],
         codeChallenge: pkceCodes.codeChallenge,
         codeChallengeMethod: pkceCodes.codeChallengeMethod,
         redirectUri: 'http://localhost:3000/auth/callback'
@@ -113,7 +113,7 @@ export class ExchangeService {
       
       // 認証コードを使ってトークンを取得
       const tokenRequest = {
-        scopes: ['https://graph.microsoft.com/Mail.Read', 'https://graph.microsoft.com/User.Read'],
+        scopes: ['https://graph.microsoft.com/Mail.Read', 'https://graph.microsoft.com/Mail.Read.Shared', 'https://graph.microsoft.com/User.Read'],
         code: authCode,
         codeVerifier: pkceCodes.codeVerifier,
         redirectUri: 'http://localhost:3000/auth/callback'
@@ -209,9 +209,10 @@ export class ExchangeService {
     });
   }
 
-  async getEmails(lastCheckDate = null, dateRange = null) {
+  async getEmails(lastCheckDate = null, dateRange = null, mailboxEmail = null) {
     try {
-      let query = `/users/${config.exchange.mailboxEmail}/messages`;
+      const targetMailbox = mailboxEmail || config.exchange.mailboxEmail;
+      let query = `/users/${targetMailbox}/messages`;
       
       const queryParams = [
         '$select=id,subject,body,from,receivedDateTime,hasAttachments,internetMessageId',
@@ -244,34 +245,36 @@ export class ExchangeService {
       const response = await this.graphClient.api(query).get();
       return response.value || [];
     } catch (error) {
-      console.error('Error fetching emails:', error);
+      console.error(`Error fetching emails from ${mailboxEmail || config.exchange.mailboxEmail}:`, error);
       throw error;
     }
   }
 
-  async getEmailDetails(emailId) {
+  async getEmailDetails(emailId, mailboxEmail = null) {
     try {
+      const targetMailbox = mailboxEmail || config.exchange.mailboxEmail;
       const email = await this.graphClient
-        .api(`/users/${config.exchange.mailboxEmail}/messages/${emailId}`)
+        .api(`/users/${targetMailbox}/messages/${emailId}`)
         .select('id,subject,body,from,toRecipients,ccRecipients,receivedDateTime,hasAttachments,internetMessageId,sender')
         .get();
 
       return email;
     } catch (error) {
-      console.error(`Error fetching email details for ${emailId}:`, error);
+      console.error(`Error fetching email details for ${emailId} from ${mailboxEmail || config.exchange.mailboxEmail}:`, error);
       throw error;
     }
   }
 
-  async markAsRead(emailId) {
+  async markAsRead(emailId, mailboxEmail = null) {
     try {
+      const targetMailbox = mailboxEmail || config.exchange.mailboxEmail;
       await this.graphClient
-        .api(`/users/${config.exchange.mailboxEmail}/messages/${emailId}`)
+        .api(`/users/${targetMailbox}/messages/${emailId}`)
         .patch({
           isRead: true
         });
     } catch (error) {
-      console.error(`Error marking email ${emailId} as read:`, error);
+      console.error(`Error marking email ${emailId} as read in ${mailboxEmail || config.exchange.mailboxEmail}:`, error);
       throw error;
     }
   }
@@ -309,6 +312,45 @@ export class ExchangeService {
   async getEmailsByDateRange(options = {}) {
     const dateRange = this.buildDateRange(options);
     return await this.getEmails(null, dateRange);
+  }
+
+  /**
+   * 全メールボックス（個人＋共有）からメールを取得
+   * @param {Date} lastCheckDate - 最後のチェック日時
+   * @param {Object} dateRange - 期間指定オブジェクト
+   * @returns {Promise<Array>} 全メールボックスからのメール配列（メールボックス情報付き）
+   */
+  async getAllMailboxEmails(lastCheckDate = null, dateRange = null) {
+    const allEmails = [];
+    
+    // 個人メールボックス
+    try {
+      const personalEmails = await this.getEmails(lastCheckDate, dateRange);
+      personalEmails.forEach(email => {
+        email.mailboxSource = config.exchange.mailboxEmail;
+        allEmails.push(email);
+      });
+    } catch (error) {
+      console.error(`Error fetching from personal mailbox ${config.exchange.mailboxEmail}:`, error);
+    }
+
+    // 共有メールボックス
+    for (const sharedMailbox of config.exchange.sharedMailboxEmails) {
+      try {
+        const sharedEmails = await this.getEmails(lastCheckDate, dateRange, sharedMailbox);
+        sharedEmails.forEach(email => {
+          email.mailboxSource = sharedMailbox;
+          allEmails.push(email);
+        });
+      } catch (error) {
+        console.error(`Error fetching from shared mailbox ${sharedMailbox}:`, error);
+      }
+    }
+
+    // 受信日時でソート
+    allEmails.sort((a, b) => new Date(b.receivedDateTime) - new Date(a.receivedDateTime));
+    
+    return allEmails;
   }
 
   /**

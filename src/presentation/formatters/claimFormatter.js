@@ -157,6 +157,8 @@ ${claim.bodyContent}
 
 processコマンドのオプション:
   process --debug / process -d       - デバッグモードでメール処理を実行
+  process --email-address=test@example.com / process -email test@example.com
+                                     - 指定メールボックスからのみメール取得
   process --days=7                   - 過去7日間のメールを処理
   process --hours=24                 - 過去24時間のメールを処理
   process --from=2025-08-20          - 指定日時以降のメールを処理
