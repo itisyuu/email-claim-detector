@@ -25,7 +25,13 @@ async function main() {
     process.exit(1);
   });
 
-  await cli.start();
+  // コマンドライン引数がある場合は直接実行
+  const args = process.argv.slice(2);
+  if (args.length > 0) {
+    await cli.startWithCommand(args);
+  } else {
+    await cli.start();
+  }
 }
 
 main().catch((error) => {

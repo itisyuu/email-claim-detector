@@ -38,7 +38,7 @@ export class ClaimDetectionOrchestrator {
     }
     
     const debugMode = options.debug || false;
-    const { days, hours, startDate, endDate, useLocalLLM } = options;
+    const { days, hours, startDate, endDate, useLocalLLM, emailAddress } = options;
 
     // Local LLM使用時はサーバーを自動起動
     if (useLocalLLM) {
@@ -59,7 +59,23 @@ export class ClaimDetectionOrchestrator {
       console.log('Starting email processing...');
 
       let emails;
-      if (days || hours || startDate || endDate) {
+      if (emailAddress) {
+        console.log(`Fetching emails from specific mailbox: ${emailAddress}`);
+        if (days || hours || startDate || endDate) {
+          const dateRangeOptions = {};
+          
+          if (days) dateRangeOptions.daysAgo = days;
+          if (hours) dateRangeOptions.hoursAgo = hours;
+          if (startDate) dateRangeOptions.startDate = startDate;
+          if (endDate) dateRangeOptions.endDate = endDate;
+          
+          const dateRange = this.exchangeService.buildDateRange(dateRangeOptions);
+          emails = await this.exchangeService.getEmails(null, dateRange, emailAddress);
+        } else {
+          const lastProcessingTime = await this.database.getLastProcessingTime();
+          emails = await this.exchangeService.getEmails(lastProcessingTime, null, emailAddress);
+        }
+      } else if (days || hours || startDate || endDate) {
         const dateRangeOptions = {};
         
         if (days) dateRangeOptions.daysAgo = days;
@@ -92,7 +108,7 @@ export class ClaimDetectionOrchestrator {
 
           console.log(`Processing email: ${email.subject}`);
           
-          const emailDetails = await this.exchangeService.getEmailDetails(email.id);
+          const emailDetails = await this.exchangeService.getEmailDetails(email.id, emailAddress || email.mailboxSource);
           const emailText = this.exchangeService.extractTextFromEmail(emailDetails);
           
           const senderEmail = emailDetails.from?.emailAddress?.address || '';

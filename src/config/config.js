@@ -10,6 +10,7 @@ export const config = {
   
   exchange: {
     mailboxEmail: process.env.MAILBOX_EMAIL,
+    sharedMailboxEmails: process.env.SHARED_MAILBOX_EMAILS ? process.env.SHARED_MAILBOX_EMAILS.split(',').map(email => email.trim()) : [],
   },
   
   openai: {

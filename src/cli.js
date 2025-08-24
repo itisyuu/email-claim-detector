@@ -36,6 +36,34 @@ export class CLI {
     }
   }
 
+  async startWithCommand(args) {
+    try {
+      console.log('🔧 設定を検証中...');
+      validateConfig();
+      
+      console.log('⚙️ サービスを初期化中...');
+      await this.detector.initialize();
+      
+      console.log('📧 コマンドを実行中...');
+      
+      const command = args.join(' ');
+      await this.handleCommand(command);
+      
+      await this.exit();
+    } catch (error) {
+      console.error('❌ 初期化エラー:', error.message);
+      
+      if (error.message.includes('Missing required configuration')) {
+        console.log('\n📝 設定方法:');
+        console.log('1. .env.example ファイルを .env にコピー');
+        console.log('2. .env ファイルに必要な設定値を入力');
+        console.log('3. アプリケーションを再実行');
+      }
+      
+      process.exit(1);
+    }
+  }
+
   showPrompt() {
     this.rl.question('\n> ', (input) => {
       this.handleCommand(input.trim());
@@ -104,6 +132,7 @@ export class CLI {
     const debugMode = args.includes('--debug') || args.includes('-d');
     const localllmMode = args.includes('--localllm') || args.includes('-localllm');
     const dateFilters = this.parseDateFilters(args);
+    const emailAddress = this.parseEmailAddress(args);
     
     console.log('📧 メールの処理を開始します...');
     if (debugMode) {
@@ -112,6 +141,9 @@ export class CLI {
     if (localllmMode) {
       console.log('🤖 ローカルLLM & ONNX NPUモードが有効です');
       console.log('⚙️ ONNX NPUサーバーを自動起動します...');
+    }
+    if (emailAddress) {
+      console.log('📮 指定メールボックス:', emailAddress);
     }
     
     if (dateFilters.days || dateFilters.hours || dateFilters.startDate || dateFilters.endDate) {
@@ -122,6 +154,7 @@ export class CLI {
       const options = { 
         debug: debugMode,
         useLocalLLM: localllmMode,
+        emailAddress: emailAddress,
         ...dateFilters
       };
       const result = await this.detector.processEmails(options);
@@ -369,6 +402,26 @@ export class CLI {
     });
 
     return filters;
+  }
+
+  parseEmailAddress(args) {
+    for (let i = 0; i < args.length; i++) {
+      const arg = args[i];
+      
+      if (arg === '--email-address' || arg === '-email') {
+        return args[i + 1];
+      }
+      
+      if (arg.startsWith('--email-address=')) {
+        return arg.substring('--email-address='.length);
+      }
+      
+      if (arg.startsWith('-email=')) {
+        return arg.substring('-email='.length);
+      }
+    }
+    
+    return null;
   }
 
   formatDateFilters(filters) {
