@@ -133,6 +133,7 @@ export class CLI {
     const localllmMode = args.includes('--localllm') || args.includes('-localllm');
     const dateFilters = this.parseDateFilters(args);
     const emailAddress = this.parseEmailAddress(args);
+    const concurrency = this.parseConcurrency(args);
     
     console.log('📧 メールの処理を開始します...');
     if (debugMode) {
@@ -150,11 +151,16 @@ export class CLI {
       console.log('📅 期間指定:', this.formatDateFilters(dateFilters));
     }
     
+    if (concurrency && !localllmMode) {
+      console.log('⚡ 同時実行数:', concurrency);
+    }
+    
     try {
       const options = { 
         debug: debugMode,
         useLocalLLM: localllmMode,
         emailAddress: emailAddress,
+        concurrency: concurrency,
         ...dateFilters
       };
       const result = await this.detector.processEmails(options);
@@ -418,6 +424,29 @@ export class CLI {
       
       if (arg.startsWith('-email=')) {
         return arg.substring('-email='.length);
+      }
+    }
+    
+    return null;
+  }
+
+  parseConcurrency(args) {
+    for (let i = 0; i < args.length; i++) {
+      const arg = args[i];
+      
+      if (arg === '--concurrency' || arg === '-c') {
+        const value = parseInt(args[i + 1]);
+        return isNaN(value) ? null : Math.max(1, value);
+      }
+      
+      if (arg.startsWith('--concurrency=')) {
+        const value = parseInt(arg.substring('--concurrency='.length));
+        return isNaN(value) ? null : Math.max(1, value);
+      }
+      
+      if (arg.startsWith('-c=')) {
+        const value = parseInt(arg.substring('-c='.length));
+        return isNaN(value) ? null : Math.max(1, value);
       }
     }
     

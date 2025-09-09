@@ -6,6 +6,9 @@ export class OpenAIService extends BaseAIService {
   constructor() {
     super();
     this.client = null;
+    this.concurrentLimit = 3; // デフォルト同時実行数
+    this.requestQueue = [];
+    this.activeRequests = 0;
   }
 
   initialize() {
@@ -17,6 +20,109 @@ export class OpenAIService extends BaseAIService {
         'api-key': config.openai.apiKey,
       },
     });
+  }
+
+  /**
+   * 同時実行数を設定
+   * @param {number} limit - 同時実行数の上限
+   */
+  setConcurrentLimit(limit) {
+    this.concurrentLimit = Math.max(1, parseInt(limit) || 3);
+    console.log(`Azure OpenAI concurrent limit set to: ${this.concurrentLimit}`);
+  }
+
+  /**
+   * 複数のメールを同時並行で分析
+   * @param {Array} emails - 分析対象のメール配列
+   * @param {boolean} debug - デバッグモード
+   * @returns {Array} - 分析結果の配列
+   */
+  async analyzeEmailsConcurrently(emails, debug = false) {
+    if (!emails || emails.length === 0) {
+      return [];
+    }
+
+    console.log(`📧 Analyzing ${emails.length} emails with concurrency limit: ${this.concurrentLimit}`);
+    
+    const results = [];
+    const totalEmails = emails.length;
+    let processedCount = 0;
+
+    // メール配列をチャンク単位に分割
+    const chunks = this.chunkArray(emails, this.concurrentLimit);
+    
+    for (const chunk of chunks) {
+      // 各チャンクを並行処理
+      const chunkPromises = chunk.map(async (email, index) => {
+        try {
+          const emailText = email.bodyContent || '';
+          const subject = email.subject || '';
+          const sender = `${email.senderName || ''} <${email.senderEmail || ''}>`;
+          
+          if (debug) {
+            console.log(`🔍 Analyzing email ${processedCount + index + 1}/${totalEmails}: ${subject.substring(0, 50)}...`);
+          }
+          
+          const result = await this.analyzeEmailForClaim(emailText, subject, sender, debug);
+          return {
+            emailId: email.id || email.emailId,
+            result: result
+          };
+        } catch (error) {
+          console.error(`Error analyzing email ${email.id}:`, error);
+          return {
+            emailId: email.id || email.emailId,
+            result: {
+              isClaim: false,
+              confidence: 0,
+              category: 'other',
+              severity: 'medium',
+              reason: `分析エラー: ${error.message}`,
+              keywords: [],
+              summary: '',
+              error: error.message
+            }
+          };
+        }
+      });
+
+      // チャンクの全ての処理完了を待機
+      const chunkResults = await Promise.all(chunkPromises);
+      results.push(...chunkResults);
+      
+      processedCount += chunk.length;
+      console.log(`📊 Progress: ${processedCount}/${totalEmails} emails processed`);
+      
+      // API レート制限を考慮した適切な間隔を設ける
+      if (processedCount < totalEmails) {
+        await this.delay(1000); // チャンク間の待機時間
+      }
+    }
+
+    console.log(`✅ Completed analyzing ${totalEmails} emails concurrently`);
+    return results;
+  }
+
+  /**
+   * 配列を指定サイズのチャンクに分割
+   * @param {Array} array - 分割対象の配列
+   * @param {number} size - チャンクサイズ
+   * @returns {Array} - チャンクの配列
+   */
+  chunkArray(array, size) {
+    const chunks = [];
+    for (let i = 0; i < array.length; i += size) {
+      chunks.push(array.slice(i, i + size));
+    }
+    return chunks;
+  }
+
+  /**
+   * 待機時間
+   * @param {number} ms - ミリ秒
+   */
+  delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   async callAI(prompt, debug = false) {
